@@ -10,6 +10,7 @@
 #include <libmnl/libmnl.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/mman.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <time.h>
@@ -66,9 +67,18 @@
  * code tree.
  */
 
+struct mnl_ring {
+	unsigned int		head;
+	void			*ring;
+};
+
 struct mnl_socket {
 	int 			fd;
 	struct sockaddr_nl	addr;
+	unsigned int		frame_size;
+	unsigned int		frame_nr;
+	struct mnl_ring		rx_ring;
+	struct mnl_ring		tx_ring;
 };
 
 /**
@@ -167,6 +177,58 @@ int mnl_socket_bind(struct mnl_socket *nl, unsigned int groups, pid_t pid)
 	return 0;
 }
 EXPORT_SYMBOL(mnl_socket_bind);
+
+int mnl_socket_set_ring(struct mnl_socket *nl, unsigned int rx_size,
+			unsigned int tx_size)
+{
+	struct nl_mmap_req req = {
+		.nm_block_size		= 16 * 4096,
+		.nm_block_nr		= 64,
+		.nm_frame_size		= 16384,
+		.nm_frame_nr		= 256,
+	};
+	unsigned int size;
+	void *ring;
+
+	if (mnl_socket_setsockopt(nl, NETLINK_RX_RING, &req, sizeof(req)) < 0)
+		return -1;
+	if (mnl_socket_setsockopt(nl, NETLINK_TX_RING, &req, sizeof(req)) < 0)
+		return -1;
+
+	size = req.nm_block_nr * req.nm_block_size;
+	ring = mmap(NULL, 2 * size, PROT_READ | PROT_WRITE, MAP_SHARED, nl->fd, 0);
+	if ((long)ring == -1L)
+		return -1;
+
+	nl->frame_size   = req.nm_frame_size;
+	nl->frame_nr     = req.nm_frame_nr - 1;
+	nl->rx_ring.ring = ring;
+	nl->rx_ring.head = 0;
+	nl->tx_ring.ring = ring + size;
+	nl->tx_ring.head = 0;
+
+	return 0;
+}
+EXPORT_SYMBOL(mnl_socket_set_ring);
+
+struct nl_mmap_hdr *mnl_socket_get_frame(struct mnl_socket *nl,
+					 enum mnl_ring_types type)
+{
+	struct mnl_ring *ring;
+
+	ring = type == MNL_RING_RX ? &nl->rx_ring : &nl->tx_ring;
+	return ring->ring + ring->head * nl->frame_size;
+}
+EXPORT_SYMBOL(mnl_socket_get_frame);
+
+void mnl_socket_advance_ring(struct mnl_socket *nl, enum mnl_ring_types type)
+{
+	struct mnl_ring *ring;
+
+	ring = type == MNL_RING_RX ? &nl->rx_ring : &nl->tx_ring;
+	ring->head = ring->head != nl->frame_nr ? ring->head + 1 : 0;
+}
+EXPORT_SYMBOL(mnl_socket_advance_ring);
 
 /**
  * mnl_socket_sendto - send a netlink message of a certain size

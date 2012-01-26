@@ -57,6 +57,9 @@ global:
   mnl_nlmsg_batch_head;
   mnl_nlmsg_batch_is_empty;
   mnl_socket_bind;
+  mnl_socket_set_ring;
+  mnl_socket_get_frame;
+  mnl_socket_advance_ring;
   mnl_socket_close;
   mnl_socket_get_fd;
   mnl_socket_get_portid;

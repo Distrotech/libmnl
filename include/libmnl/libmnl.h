@@ -26,8 +26,16 @@ extern "C" {
 
 struct mnl_socket;
 
+enum mnl_ring_types {
+	MNL_RING_RX,
+	MNL_RING_TX,
+};
+
 extern struct mnl_socket *mnl_socket_open(int type);
 extern int mnl_socket_bind(struct mnl_socket *nl, unsigned int groups, pid_t pid);
+extern int mnl_socket_set_ring(struct mnl_socket *nl, unsigned int rx_size, unsigned int tx_size);
+extern struct nl_mmap_hdr *mnl_socket_get_frame(struct mnl_socket *nl, enum mnl_ring_types type);
+extern void mnl_socket_advance_ring(struct mnl_socket *nl, enum mnl_ring_types type);
 extern int mnl_socket_close(struct mnl_socket *nl);
 extern int mnl_socket_get_fd(const struct mnl_socket *nl);
 extern unsigned int mnl_socket_get_portid(const struct mnl_socket *nl);
