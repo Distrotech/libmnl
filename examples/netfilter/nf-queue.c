@@ -4,6 +4,8 @@
 #include <unistd.h>
 #include <string.h>
 #include <time.h>
+#include <poll.h>
+#include <errno.h>
 #include <arpa/inet.h>
 
 #include <libmnl/libmnl.h>
@@ -75,9 +77,16 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 }
 
 static struct nlmsghdr *
-nfq_build_cfg_pf_request(char *buf, uint8_t command)
+nfq_build_cfg_pf_request(struct mnl_socket *nl, uint8_t command)
 {
-	struct nlmsghdr *nlh = mnl_nlmsg_put_header(buf);
+	struct nl_mmap_hdr *hdr;
+
+	hdr = mnl_socket_get_frame(nl, MNL_RING_TX);
+	if (hdr->nm_status != NL_MMAP_STATUS_UNUSED)
+		return NULL;
+	mnl_socket_advance_ring(nl, MNL_RING_TX);
+
+	struct nlmsghdr *nlh = mnl_nlmsg_put_header((void *)hdr + NL_MMAP_HDRLEN);
 	nlh->nlmsg_type	= (NFNL_SUBSYS_QUEUE << 8) | NFQNL_MSG_CONFIG;
 	nlh->nlmsg_flags = NLM_F_REQUEST;
 
@@ -91,13 +100,22 @@ nfq_build_cfg_pf_request(char *buf, uint8_t command)
 	};
 	mnl_attr_put(nlh, NFQA_CFG_CMD, sizeof(cmd), &cmd);
 
+	hdr->nm_len    = nlh->nlmsg_len;
+	hdr->nm_status = NL_MMAP_STATUS_VALID;
 	return nlh;
 }
 
 static struct nlmsghdr *
-nfq_build_cfg_request(char *buf, uint8_t command, int queue_num)
+nfq_build_cfg_request(struct mnl_socket *nl, uint8_t command, int queue_num)
 {
-	struct nlmsghdr *nlh = mnl_nlmsg_put_header(buf);
+	struct nl_mmap_hdr *hdr;
+
+	hdr = mnl_socket_get_frame(nl, MNL_RING_TX);
+	if (hdr->nm_status != NL_MMAP_STATUS_UNUSED)
+		return NULL;
+	mnl_socket_advance_ring(nl, MNL_RING_TX);
+
+	struct nlmsghdr *nlh = mnl_nlmsg_put_header((void *)hdr + NL_MMAP_HDRLEN);
 	nlh->nlmsg_type	= (NFNL_SUBSYS_QUEUE << 8) | NFQNL_MSG_CONFIG;
 	nlh->nlmsg_flags = NLM_F_REQUEST;
 
@@ -112,13 +130,22 @@ nfq_build_cfg_request(char *buf, uint8_t command, int queue_num)
 	};
 	mnl_attr_put(nlh, NFQA_CFG_CMD, sizeof(cmd), &cmd);
 
+	hdr->nm_len    = nlh->nlmsg_len;
+	hdr->nm_status = NL_MMAP_STATUS_VALID;
 	return nlh;
 }
 
 static struct nlmsghdr *
-nfq_build_cfg_params(char *buf, uint8_t mode, int range, int queue_num)
+nfq_build_cfg_params(struct mnl_socket *nl, uint8_t mode, int range, int queue_num)
 {
-	struct nlmsghdr *nlh = mnl_nlmsg_put_header(buf);
+	struct nl_mmap_hdr *hdr;
+
+	hdr = mnl_socket_get_frame(nl, MNL_RING_TX);
+	if (hdr->nm_status != NL_MMAP_STATUS_UNUSED)
+		return NULL;
+	mnl_socket_advance_ring(nl, MNL_RING_TX);
+
+	struct nlmsghdr *nlh = mnl_nlmsg_put_header((void *)hdr + NL_MMAP_HDRLEN);
 	nlh->nlmsg_type	= (NFNL_SUBSYS_QUEUE << 8) | NFQNL_MSG_CONFIG;
 	nlh->nlmsg_flags = NLM_F_REQUEST;
 
@@ -133,16 +160,25 @@ nfq_build_cfg_params(char *buf, uint8_t mode, int range, int queue_num)
 	};
 	mnl_attr_put(nlh, NFQA_CFG_PARAMS, sizeof(params), &params);
 
+	hdr->nm_len    = nlh->nlmsg_len;
+	hdr->nm_status = NL_MMAP_STATUS_VALID;
 	return nlh;
 }
 
 static struct nlmsghdr *
-nfq_build_verdict(char *buf, int id, int queue_num, int verd)
+nfq_build_verdict(struct mnl_socket *nl, int id, int queue_num, int verd)
 {
+	struct nl_mmap_hdr *hdr;
+
+	hdr = mnl_socket_get_frame(nl, MNL_RING_TX);
+	if (hdr->nm_status != NL_MMAP_STATUS_UNUSED)
+		return NULL;
+	mnl_socket_advance_ring(nl, MNL_RING_TX);
+
 	struct nlmsghdr *nlh;
 	struct nfgenmsg *nfg;
 
-	nlh = mnl_nlmsg_put_header(buf);
+	nlh = mnl_nlmsg_put_header((void *)hdr + NL_MMAP_HDRLEN);
 	nlh->nlmsg_type = (NFNL_SUBSYS_QUEUE << 8) | NFQNL_MSG_VERDICT;
 	nlh->nlmsg_flags = NLM_F_REQUEST;
 	nfg = mnl_nlmsg_put_extra_header(nlh, sizeof(*nfg));
@@ -156,14 +192,38 @@ nfq_build_verdict(char *buf, int id, int queue_num, int verd)
 	};
 	mnl_attr_put(nlh, NFQA_VERDICT_HDR, sizeof(vh), &vh);
 
+	hdr->nm_len    = nlh->nlmsg_len;
+	hdr->nm_status = NL_MMAP_STATUS_VALID;
 	return nlh;
+}
+
+static int mnl_socket_poll(struct mnl_socket *nl)
+{
+	struct pollfd pfds[1];
+
+	while (1) {
+		pfds[0].fd	= mnl_socket_get_fd(nl);
+		pfds[0].events	= POLLIN | POLLERR;
+		pfds[0].revents = 0;
+
+		if (poll(pfds, 1, -1) < 0 && errno != -EINTR)
+			return -1;
+
+		if (pfds[0].revents & POLLIN)
+			return 0;
+		if (pfds[0].revents & POLLERR)
+			return -1;
+	}
 }
 
 int main(int argc, char *argv[])
 {
 	struct mnl_socket *nl;
-	char buf[MNL_SOCKET_BUFFER_SIZE];
+	char buf[16384];
+	struct nl_mmap_hdr *hdr;
 	struct nlmsghdr *nlh;
+	ssize_t len;
+	void *ptr;
 	int ret;
 	unsigned int portid, queue_num;
 
@@ -179,65 +239,86 @@ int main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 
+	if (mnl_socket_set_ring(nl, 0, 0) < 0) {
+		perror("mnl_socket_set_ring");
+		exit(EXIT_FAILURE);
+	}
+
 	if (mnl_socket_bind(nl, 0, MNL_SOCKET_AUTOPID) < 0) {
 		perror("mnl_socket_bind");
 		exit(EXIT_FAILURE);
 	}
 	portid = mnl_socket_get_portid(nl);
 
-	nlh = nfq_build_cfg_pf_request(buf, NFQNL_CFG_CMD_PF_UNBIND);
+	nlh = nfq_build_cfg_pf_request(nl, NFQNL_CFG_CMD_PF_UNBIND);
 
-	if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
+	if (mnl_socket_sendto(nl, NULL, 0) < 0) {
 		perror("mnl_socket_send");
 		exit(EXIT_FAILURE);
 	}
 
-	nlh = nfq_build_cfg_pf_request(buf, NFQNL_CFG_CMD_PF_BIND);
+	nlh = nfq_build_cfg_pf_request(nl, NFQNL_CFG_CMD_PF_BIND);
 
-	if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
+	if (mnl_socket_sendto(nl, NULL, 0) < 0) {
 		perror("mnl_socket_send");
 		exit(EXIT_FAILURE);
 	}
 
-	nlh = nfq_build_cfg_request(buf, NFQNL_CFG_CMD_BIND, queue_num);
+	nlh = nfq_build_cfg_request(nl, NFQNL_CFG_CMD_BIND, queue_num);
 
-	if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
+	if (mnl_socket_sendto(nl, NULL, 0) < 0) {
 		perror("mnl_socket_send");
 		exit(EXIT_FAILURE);
 	}
 
-	nlh = nfq_build_cfg_params(buf, NFQNL_COPY_PACKET, 0xFFFF, queue_num);
+	nlh = nfq_build_cfg_params(nl, NFQNL_COPY_PACKET, 0xFFFF, queue_num);
 
-	if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
+	if (mnl_socket_sendto(nl, NULL, 0) < 0) {
 		perror("mnl_socket_send");
 		exit(EXIT_FAILURE);
 	}
 
-	ret = mnl_socket_recvfrom(nl, buf, sizeof(buf));
-	if (ret == -1) {
-		perror("mnl_socket_recvfrom");
-		exit(EXIT_FAILURE);
-	}
-	while (ret > 0) {
+	while (1) {
 		uint32_t id;
 
-		ret = mnl_cb_run(buf, ret, 0, portid, queue_cb, NULL);
-		if (ret < 0){
-			perror("mnl_cb_run");
+		ret = mnl_socket_poll(nl);
+		if (ret < 0) {
+			perror("mnl_socket_poll");
 			exit(EXIT_FAILURE);
 		}
 
-		id = ret - MNL_CB_OK;
-		nlh = nfq_build_verdict(buf, id, queue_num, NF_ACCEPT);
-		if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
-			perror("mnl_socket_send");
-			exit(EXIT_FAILURE);
-		}
+		while (1) {
+			hdr = mnl_socket_get_frame(nl, MNL_RING_RX);
 
-		ret = mnl_socket_recvfrom(nl, buf, sizeof(buf));
-		if (ret == -1) {
-			perror("mnl_socket_recvfrom");
-			exit(EXIT_FAILURE);
+			if (hdr->nm_status == NL_MMAP_STATUS_VALID) {
+				ptr = (void *)hdr + NL_MMAP_HDRLEN;
+				len = hdr->nm_len;
+				if (len == 0)
+					goto release;
+			} else if (hdr->nm_status == NL_MMAP_STATUS_COPY) {
+				len = recv(mnl_socket_get_fd(nl),
+					   buf, sizeof(buf), MSG_DONTWAIT);
+				if (len <= 0)
+					break;
+				ptr = buf;
+			} else
+				break;
+
+			ret = mnl_cb_run(ptr, len, 0, portid, queue_cb, NULL);
+			if (ret < 0){
+				perror("mnl_cb_run");
+				exit(EXIT_FAILURE);
+			}
+
+			id = ret - MNL_CB_OK;
+			nlh = nfq_build_verdict(nl, id, queue_num, NF_ACCEPT);
+			if (mnl_socket_sendto(nl, NULL, 0) < 0) {
+				perror("mnl_socket_send");
+				exit(EXIT_FAILURE);
+			}
+release:
+			hdr->nm_status = NL_MMAP_STATUS_UNUSED;
+			mnl_socket_advance_ring(nl, MNL_RING_RX);
 		}
 	}
 
