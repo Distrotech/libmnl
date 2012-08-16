@@ -56,10 +56,10 @@ extern bool mnl_nlmsg_ok(const struct nlmsghdr *nlh, int len);
 extern struct nlmsghdr *mnl_nlmsg_next(const struct nlmsghdr *nlh, int *len);
 
 /* Netlink sequence tracking */
-extern bool mnl_nlmsg_seq_ok(const struct nlmsghdr *nlh, unsigned int seq);
+extern __attribute__((deprecated)) bool mnl_nlmsg_seq_ok(const struct nlmsghdr *nlh, unsigned int seq);
 
 /* Netlink portID checking */
-extern bool mnl_nlmsg_portid_ok(const struct nlmsghdr *nlh, unsigned int portid);
+extern __attribute__((deprecated)) bool mnl_nlmsg_portid_ok(const struct nlmsghdr *nlh, unsigned int portid);
 
 /* Netlink message getters */
 extern void *mnl_nlmsg_get_payload(const struct nlmsghdr *nlh);
@@ -175,14 +175,18 @@ extern int mnl_attr_parse_payload(const void *payload, size_t payload_len, mnl_a
 #define MNL_CB_STOP		 0
 #define MNL_CB_OK		 1
 
+#define MNL_CB_F_ANY_PORTID	(1 << 0)
+#define MNL_CB_F_ANY_SEQ	(1 << 1)
+
 typedef int (*mnl_cb_t)(const struct nlmsghdr *nlh, void *data);
 
-extern int mnl_cb_run(const void *buf, size_t numbytes, unsigned int seq,
-		      unsigned int portid, mnl_cb_t cb_data, void *data);
+extern __attribute__((deprecated)) int mnl_cb_run(const void *buf, size_t numbytes, unsigned int seq, unsigned int portid, mnl_cb_t cb_data, void *data);
 
-extern int mnl_cb_run2(const void *buf, size_t numbytes, unsigned int seq,
-		       unsigned int portid, mnl_cb_t cb_data, void *data,
-		       mnl_cb_t *cb_ctl_array, unsigned int cb_ctl_array_len);
+extern __attribute__((deprecated)) int mnl_cb_run2(const void *buf, size_t numbytes, unsigned int seq, unsigned int portid, mnl_cb_t cb_data, void *data, mnl_cb_t *cb_ctl_array, unsigned int cb_ctl_array_len);
+
+extern int mnl_callback_run(const void *buf, size_t numbytes, unsigned int seq, unsigned int portid, mnl_cb_t cb_data, void *data, unsigned int flags);
+
+extern int mnl_callback_run2(const void *buf, size_t numbytes, unsigned int seq, unsigned int portid, mnl_cb_t cb_data, void *data, mnl_cb_t *cb_ctl_array, unsigned int cb_ctl_array_len, unsigned int flags);
 
 /*
  * other declarations
