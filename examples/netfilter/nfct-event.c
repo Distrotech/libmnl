@@ -227,9 +227,10 @@ int main(void)
 			exit(EXIT_FAILURE);
 		}
 
-		ret = mnl_cb_run(buf, ret, 0, 0, data_cb, NULL);
+		ret = mnl_callback_run(buf, ret, 0, 0, data_cb, NULL,
+				       MNL_CB_F_ANY_PORTID);
 		if (ret == -1) {
-			perror("mnl_cb_run");
+			perror("mnl_callback_run");
 			exit(EXIT_FAILURE);
 		}
 	}

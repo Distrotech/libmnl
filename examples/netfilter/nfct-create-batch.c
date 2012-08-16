@@ -112,11 +112,12 @@ send_batch(struct mnl_socket *nl, struct mnl_nlmsg_batch *b, int portid)
 			exit(EXIT_FAILURE);
 		}
 
-		ret = mnl_cb_run2(rcv_buf, ret, 0, portid,
-				  NULL, NULL, cb_ctl_array,
-				  MNL_ARRAY_SIZE(cb_ctl_array));
+		ret = mnl_callback_run2(rcv_buf, ret, 0, portid,
+					NULL, NULL, cb_ctl_array,
+					MNL_ARRAY_SIZE(cb_ctl_array),
+					MNL_CB_F_ANY_SEQ);
 		if (ret == -1) {
-			perror("mnl_cb_run");
+			perror("mnl_callback_run");
 			exit(EXIT_FAILURE);
 		}
 

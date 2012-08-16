@@ -151,7 +151,7 @@ int main(int argc, char *argv[])
 	char buf[MNL_SOCKET_BUFFER_SIZE];
 	struct nlmsghdr *nlh;
 	int ret;
-	unsigned int portid, qnum;
+	unsigned int qnum;
 
 	if (argc != 2) {
 		printf("Usage: %s [queue_num]\n", argv[0]);
@@ -169,7 +169,6 @@ int main(int argc, char *argv[])
 		perror("mnl_socket_bind");
 		exit(EXIT_FAILURE);
 	}
-	portid = mnl_socket_get_portid(nl);
 
 	nlh = nflog_build_cfg_pf_request(buf, NFULNL_CFG_CMD_PF_UNBIND);
 
@@ -205,9 +204,9 @@ int main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 	while (ret > 0) {
-		ret = mnl_cb_run(buf, ret, 0, portid, log_cb, NULL);
+		ret = mnl_callback_run(buf, ret, 0, 0, log_cb, NULL, 0);
 		if (ret < 0){
-			perror("mnl_cb_run");
+			perror("mnl_callback_run");
 			exit(EXIT_FAILURE);
 		}
 

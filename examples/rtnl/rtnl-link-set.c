@@ -72,7 +72,7 @@ int main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 
-	ret = mnl_cb_run(buf, ret, seq, portid, NULL, NULL);
+	ret = mnl_callback_run(buf, ret, seq, portid, NULL, NULL, 0);
 	if (ret == -1){
 		perror("callback");
 		exit(EXIT_FAILURE);

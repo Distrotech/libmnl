@@ -87,7 +87,7 @@ int main(void)
 
 	ret = mnl_socket_recvfrom(nl, buf, sizeof(buf));
 	while (ret > 0) {
-		ret = mnl_cb_run(buf, ret, seq, portid, data_cb, NULL);
+		ret = mnl_callback_run(buf, ret, seq, portid, data_cb, NULL, 0);
 		if (ret <= MNL_CB_STOP)
 			break;
 		ret = mnl_socket_recvfrom(nl, buf, sizeof(buf));
